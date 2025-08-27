@@ -1,0 +1,11 @@
+# Files/folders excluded from Azure Functions deployment
+local.settings.json
+.env
+.env.*
+.vscode/
+.git/
+node_modules/
+tests/
+**/*.md
+package-lock.json
+

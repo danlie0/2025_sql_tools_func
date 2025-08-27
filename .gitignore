@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Local dev secrets
+.env
+local.settings.json
+
+# Build Artifacts
+package.zip
+
+# Editor
+.vscode/
+
+# Logs
+*.log
+
+# OS
+.DS_Store

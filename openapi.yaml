@@ -1,0 +1,195 @@
+swagger: '2.0'
+info:
+  title: SQL Tools Function API
+  version: 1.0.0
+  description: |
+    Azure Functions API exposing safe, read-only SQL tools for agents.
+    - sql-schema: discover allowed views/columns
+    - sql-query: execute parameterized SELECT queries with limits and validation
+
+host: 2025-sql-tools-func.azurewebsites.net
+basePath: /
+schemes:
+  - https
+consumes:
+  - application/json
+produces:
+  - application/json
+
+security:
+  - function_key_header: []
+
+paths:
+  /api/sql-schema:
+    get:
+      summary: Get whitelisted schema (views and columns)
+      operationId: getSqlSchema
+      responses:
+        '200':
+          description: Schema information
+          schema:
+            $ref: '#/definitions/SchemaResponse'
+        '500':
+          description: Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+
+  /api/sql-query:
+    post:
+      summary: Execute a safe, parameterized SELECT query
+      operationId: postSqlQuery
+      parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/QueryRequest'
+      responses:
+        '200':
+          description: Query result
+          schema:
+            $ref: '#/definitions/QueryResponse'
+        '400':
+          description: Bad request
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        '500':
+          description: Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+
+securityDefinitions:
+  function_key_header:
+    type: apiKey
+    in: header
+    name: x-functions-key
+    description: Azure Functions function key passed as header
+
+definitions:
+  SchemaResponse:
+    type: object
+    properties:
+      tables:
+        type: array
+        items:
+          $ref: '#/definitions/Table'
+      common_queries:
+        type: array
+        items:
+          $ref: '#/definitions/CommonQueryTemplate'
+      generated_at_utc:
+        type: string
+        format: date-time
+      notes:
+        type: string
+
+  Table:
+    type: object
+    properties:
+      name:
+        type: string
+      description:
+        type: string
+      columns:
+        type: array
+        items:
+          $ref: '#/definitions/Column'
+      fks:
+        type: array
+        items:
+          $ref: '#/definitions/ForeignKey'
+      sample_joins:
+        type: array
+        items:
+          $ref: '#/definitions/SampleJoin'
+
+  Column:
+    type: object
+    properties:
+      name:
+        type: string
+      type:
+        type: string
+      nullable:
+        type: boolean
+      max_len:
+        type: integer
+        x-nullable: true
+      pk:
+        type: boolean
+      description:
+        type: string
+
+  ForeignKey:
+    type: object
+    properties:
+      column:
+        type: string
+      ref_table:
+        type: string
+      ref_column:
+        type: string
+
+  SampleJoin:
+    type: object
+    properties:
+      description:
+        type: string
+      template:
+        type: string
+
+  CommonQueryTemplate:
+    type: object
+    properties:
+      description:
+        type: string
+      template:
+        type: string
+
+  QueryRequest:
+    type: object
+    required:
+      - sql
+    properties:
+      sql:
+        type: string
+        description: "SELECT-only T-SQL. MUST include schema prefix (e.g., SalesLT.vGetAllCategories). Named parameters use :name syntax (converted internally to @name)"
+      params:
+        type: object
+        description: Named parameter values for :name placeholders
+        additionalProperties: {}
+      row_limit:
+        type: integer
+        minimum: 1
+        maximum: 5000
+        description: Optional row limit; default from server setting
+
+  QueryResponse:
+    type: object
+    properties:
+      columns:
+        type: array
+        items:
+          type: string
+      rows:
+        type: array
+        description: Rows returned as array of objects keyed by column name.
+        items:
+          type: object
+          additionalProperties: {}
+      row_count:
+        type: integer
+      sql_used:
+        type: string
+      execution_time_ms:
+        type: integer
+      notes:
+        type: string
+        x-nullable: true
+
+  ErrorResponse:
+    type: object
+    properties:
+      error:
+        type: string
+
