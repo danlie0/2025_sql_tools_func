@@ -12,17 +12,14 @@ const EXCLUDE_SCHEMAS = (process.env.SCHEMA_EXCLUDE_SCHEMAS || 'sys,INFORMATION_
   .split(',').map(s => s.trim()).filter(Boolean);
 
 app.http('sql-schema', {
-  methods: ['GET','POST'],
+  methods: ['GET'],
   authLevel: 'function',
   route: 'sql-schema',
   handler: async (req, ctx) => {
     try {
-      const body = await (req.method === 'POST' ? req.json().catch(() => ({})) : {});
       const headerGetter = req.headers && typeof req.headers.get === 'function' ? (k => req.headers.get(k)) : (k => req.headers?.[k]);
       const headerMode = headerGetter('x-schema-object-types') || headerGetter('X-Schema-Object-Types') || undefined;
-      const mode = (headerMode || body?.object_types || OBJECT_TYPES_DEFAULT).toLowerCase();
-
-      const clientFilter = Array.isArray(body?.tables) ? body.tables : null; // schema-qualified
+      const mode = (headerMode || OBJECT_TYPES_DEFAULT).toLowerCase();
 
       const pool = await getPool();
       const objects = [];
@@ -41,9 +38,9 @@ app.http('sql-schema', {
         r.recordset.forEach(v => objects.push({ schema: v.TABLE_SCHEMA, name: v.TABLE_NAME, type: 'VIEW' }));
       }
 
-      // Tables via allow-list (env or request) - supports wildcards like SalesLT.*
-      if ((mode === 'tables' || mode === 'both') && (OBJECT_ALLOWLIST.length || clientFilter?.length)) {
-        const allow = clientFilter?.length ? clientFilter : OBJECT_ALLOWLIST;
+      // Tables via allow-list (env only) - supports wildcards like SalesLT.*
+      if ((mode === 'tables' || mode === 'both') && (OBJECT_ALLOWLIST.length)) {
+        const allow = OBJECT_ALLOWLIST;
         const reqTables = pool.request();
         allow.forEach((qn, i) => {
           const [sch, nm] = qn.split('.');

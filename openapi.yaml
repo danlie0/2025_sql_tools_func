@@ -40,30 +40,6 @@ paths:
           description: Error
           schema:
             $ref: '#/definitions/ErrorResponse'
-    post:
-      summary: Get whitelisted schema (views and columns) with filters
-      operationId: postSqlSchema
-      parameters:
-        - in: header
-          name: x-schema-object-types
-          type: string
-          enum: [views, tables, both]
-          required: false
-          description: Override object types to include (header takes precedence over body)
-        - in: body
-          name: body
-          required: false
-          schema:
-            $ref: '#/definitions/SchemaRequest'
-      responses:
-        '200':
-          description: Schema information
-          schema:
-            $ref: '#/definitions/SchemaResponse'
-        '500':
-          description: Error
-          schema:
-            $ref: '#/definitions/ErrorResponse'
 
   /api/sql-query:
     post:
@@ -114,18 +90,6 @@ definitions:
       notes:
         type: string
 
-  SchemaRequest:
-    type: object
-    properties:
-      object_types:
-        type: string
-        enum: [views, tables, both]
-        description: Object types to include
-      tables:
-        type: array
-        description: Schema-qualified allow-list; supports wildcard via schema.* (e.g., SalesLT.*)
-        items:
-          type: string
 
   Table:
     type: object
