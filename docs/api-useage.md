@@ -1,72 +1,38 @@
-### SQL Tools Function API — Usage
+# SQL Tools Function API — Usage Guide 📊
 
-This Azure Functions app exposes two HTTP endpoints for safe, read‑only access to Azure SQL.
+This Azure Functions app provides **safe, read-only access** to Azure SQL databases through two HTTP endpoints.
 
-- Base URL (local): `http://localhost:7071`
-- Base URL (prod): `https://<your-func-app>.azurewebsites.net`
-- All responses are JSON.
+## 🌐 Production URL
+**Base URL**: `https://2025-sql-tools-func.azurewebsites.net`
 
-### Authentication
-- Local development: no key required by default.
-- Azure: include the function key header `x-functions-key: <key>`.
+All responses are in JSON format.
 
-### Endpoints
-- `GET /api/sql-schema` — Discover allowed objects and query templates.
-- `POST /api/sql-schema` — Same as GET, with optional filters/body.
-- `POST /api/sql-query` — Execute parameterized SELECT queries with enforced row limits.
+## 🔐 Authentication
+**Required**: Include the function key header in all requests:
+```
+x-functions-key: <your-function-key>
+```
+
+## 📋 Available Endpoints
+
+### 1. **GET** `/api/sql-schema` 
+**Purpose**: Discover database structure, tables, views, columns, and relationships
+
+**Headers** (optional):
+- `x-schema-object-types`: `views` | `tables` | `both` (default: `both`)
+
+**Response**: Database schema information including:
+- Tables and views with columns, data types, and constraints
+- Primary keys and foreign key relationships  
+- Sample join queries
+- Common query templates
 
 ---
 
-### GET /api/sql-schema
-Returns a summary of whitelisted views and optionally allow‑listed tables, with columns, PKs/FKs, sample joins, and common query templates.
+### 2. **POST** `/api/sql-query`
+**Purpose**: Execute safe, parameterized SELECT queries
 
-Optional header:
-- `x-schema-object-types: views|tables|both` (defaults from server setting)
-
-Example (local):
-```bash
-curl -s http://localhost:7071/api/sql-schema | jq
-```
-
-### POST /api/sql-schema
-Same as GET, with extra options via JSON body.
-
-Body (all fields optional):
-```json
-{
-  "object_types": "views|tables|both",
-  "tables": ["schema.table", "schema.other_table"]
-}
-```
-
-Notes:
-- Views are returned if their names match `SCHEMA_WHITELIST` (e.g., `vw%`).
-- Tables are returned only if in the allow‑list: either server `OBJECT_ALLOWLIST` or this request body `tables`.
-
-Response shape (abbrev):
-```json
-{
-  "tables": [
-    {
-      "name": "SalesLT.Customer",
-      "description": "...",
-      "columns": [ { "name": "CustomerID", "type": "int", "pk": true, "nullable": false } ],
-      "fks": [ { "column": "...", "ref_table": "...", "ref_column": "..." } ],
-      "sample_joins": [ { "description": "...", "template": "SELECT ... JOIN ..." } ]
-    }
-  ],
-  "common_queries": [ { "description": "Row count for a table", "template": "SELECT COUNT(*) AS total FROM <schema.table>" } ],
-  "generated_at_utc": "2025-08-27T00:00:00.000Z",
-  "notes": "Mode=both; views LIKE vw%; tables from allow-list"
-}
-```
-
----
-
-### POST /api/sql-query
-Execute a safe, parameterized SELECT. The server validates and, if needed, injects a `TOP(n)` limit. Named params use `:name` syntax in your SQL and are bound as SQL Server parameters.
-
-Body:
+**Body**:
 ```json
 {
   "sql": "SELECT * FROM SalesLT.Customer WHERE CustomerID = :id",
@@ -75,109 +41,190 @@ Body:
 }
 ```
 
-Important rules enforced server‑side:
-- Only `SELECT` statements are allowed; all other DDL/DML and comment markers are rejected.
-- Banned tokens include: `delete|insert|update|merge|alter|drop|create|grant|revoke|truncate|exec|execute|xp_|sp_`, semicolons `;`, line/block comments `-- /* */`.
-- If your SQL lacks `TOP`, the server injects `TOP(n)` right after `SELECT` using `row_limit` (default from env, max 5000).
-- `:name` placeholders are converted to `@name` and bound with types inferred from values.
+**Parameters**:
+- `sql` (required): Your SELECT query using `:name` placeholders
+- `params` (optional): Values for the placeholders
+- `row_limit` (optional): Maximum rows to return (default: 200, max: 5000)
 
-Example (local):
+---
+
+## 🚀 Quick Examples
+
+### Get Database Schema
+```bash
+curl -s -X GET \
+  https://2025-sql-tools-func.azurewebsites.net/api/sql-schema \
+  -H 'x-functions-key: <your-key>' | jq
+```
+
+### Execute a Query
 ```bash
 curl -s -X POST \
-  http://localhost:7071/api/sql-query \
+  https://2025-sql-tools-func.azurewebsites.net/api/sql-query \
+  -H 'x-functions-key: <your-key>' \
   -H 'Content-Type: application/json' \
   -d '{
-        "sql":"SELECT * FROM SalesLT.Customer WHERE CustomerID = :id",
-        "params": { "id": 1 },
-        "row_limit": 100
-      }' | jq
+    "sql": "SELECT TOP(10) * FROM SalesLT.Customer ORDER BY CustomerID",
+    "row_limit": 10
+  }' | jq
 ```
 
-Example (Azure):
+### Query with Parameters
 ```bash
 curl -s -X POST \
-  https://<your-func-app>.azurewebsites.net/api/sql-query \
-  -H 'x-functions-key: <key>' \
+  https://2025-sql-tools-func.azurewebsites.net/api/sql-query \
+  -H 'x-functions-key: <your-key>' \
   -H 'Content-Type: application/json' \
-  -d '{"sql":"SELECT TOP(:n) * FROM SalesLT.Customer ORDER BY CustomerID","params":{"n":10}}'
+  -d '{
+    "sql": "SELECT * FROM SalesLT.Customer WHERE CustomerID = :id AND TotalDue >= :minTotal",
+    "params": { "id": 29485, "minTotal": 100.0 },
+    "row_limit": 100
+  }' | jq
 ```
 
-Response shape:
+---
+
+## 🛡️ Security Features
+
+### SQL Injection Protection
+- **Only SELECT statements allowed** - all other SQL commands are blocked
+- **Parameterized queries** - use `:name` placeholders for safe value binding
+- **Banned keywords**: `delete`, `insert`, `update`, `merge`, `alter`, `drop`, `create`, `grant`, `revoke`, `truncate`, `exec`, `execute`, `xp_`, `sp_`
+- **No comments**: `--` and `/* */` are blocked
+- **No semicolons**: `;` is blocked
+
+### Row Limits
+- **Default limit**: 200 rows
+- **Maximum limit**: 5,000 rows
+- **Automatic TOP injection**: If your query doesn't include `TOP()`, the system automatically adds `TOP(limit)`
+
+---
+
+## 📊 Response Formats
+
+### Schema Response (`/api/sql-schema`)
+```json
+{
+  "tables": [
+    {
+      "name": "SalesLT.Customer",
+      "description": "Customer information table",
+      "columns": [
+        {
+          "name": "CustomerID",
+          "type": "int",
+          "pk": true,
+          "nullable": false
+        }
+      ],
+      "fks": [
+        {
+          "column": "CustomerTypeID",
+          "ref_table": "SalesLT.CustomerType",
+          "ref_column": "CustomerTypeID"
+        }
+      ],
+      "sample_joins": [
+        {
+          "description": "Join Customer with CustomerType",
+          "template": "SELECT t1.*, t2.* FROM SalesLT.Customer t1 INNER JOIN SalesLT.CustomerType t2 ON t1.CustomerTypeID = t2.CustomerTypeID"
+        }
+      ]
+    }
+  ],
+  "common_queries": [
+    {
+      "description": "Row count for a table",
+      "template": "SELECT COUNT(*) AS total FROM <schema.table>"
+    }
+  ],
+  "generated_at_utc": "2025-08-27T00:00:00.000Z",
+  "notes": "Mode=both; views LIKE vw%; tables from allow-list"
+}
+```
+
+### Query Response (`/api/sql-query`)
 ```json
 {
   "columns": ["CustomerID", "FirstName", "LastName"],
-  "rows": [ { "CustomerID": 1, "FirstName": "A", "LastName": "B" } ],
+  "rows": [
+    {
+      "CustomerID": 1,
+      "FirstName": "John",
+      "LastName": "Doe"
+    }
+  ],
   "row_count": 1,
-  "sql_used": "SELECT TOP(10) ...",
-  "execution_time_ms": 12,
+  "sql_used": "SELECT TOP(100) * FROM SalesLT.Customer WHERE CustomerID = @id",
+  "execution_time_ms": 45,
   "notes": "Truncated to TOP(100)."
 }
 ```
 
-Errors:
-- `400` if `sql` is missing or not a string.
-- `500` with `{ "error": "..." }` for validation or execution failures (e.g., banned keywords).
+---
+
+## 🔧 Configuration
+
+The system uses these environment variables (configured in Azure App Settings):
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `SCHEMA_WHITELIST` | View name pattern (e.g., `vw%`) | `vw%` |
+| `SCHEMA_OBJECT_TYPES` | Objects to return: `views` \| `tables` \| `both` | `both` |
+| `OBJECT_ALLOWLIST` | Comma-separated list of allowed tables (e.g., `SalesLT.Customer,SalesLT.Product`) | Empty |
+| `ROW_LIMIT_DEFAULT` | Default row limit for queries | `200` |
+| `SCHEMA_EXCLUDE_SCHEMAS` | Schemas to exclude (e.g., `sys,INFORMATION_SCHEMA,cdc`) | `sys,INFORMATION_SCHEMA,cdc` |
 
 ---
 
-### Parameter Binding Details
-- Use `:name` placeholders in your SQL; provide values in `params`.
-- Types are inferred: integer → `Int`, float → `Float`, `Date` → `DateTime2`, boolean → `Bit`, others → `NVarChar(max)`.
-- Example with multiple params:
-```json
-{
-  "sql": "SELECT * FROM SalesLT.SalesOrderHeader WHERE CustomerID = :id AND TotalDue >= :minTotal",
-  "params": { "id": 29485, "minTotal": 100.0 }
-}
-```
+## 💡 Best Practices
 
-### Object Discovery Behavior (`/api/sql-schema`)
-- Views: returned when `TABLE_NAME LIKE SCHEMA_WHITELIST` (e.g., `vw%`).
-- Tables: returned only if whitelisted via `OBJECT_ALLOWLIST` (env) or the POST `tables` body list.
-- You can force views/tables/both via header `x-schema-object-types` or POST `object_types`.
+### Query Writing
+- **Always use schema-qualified names**: `SalesLT.Customer` not just `Customer`
+- **Use parameters**: `:id` instead of hardcoded values
+- **Include TOP()**: Add `TOP(100)` to control result size
+- **Test with small limits first**: Start with `row_limit: 10`
 
----
+### Error Handling
+- **Check status codes**: 200 = success, 400 = bad request, 500 = server error
+- **Read error messages**: The `error` field contains helpful details
+- **Validate SQL**: Ensure your query is SELECT-only with no banned keywords
 
-### Environment Settings
-Configure via Azure App Settings or `local.settings.json`.
-
-- `SQL_SERVER`: `<server>.database.windows.net`
-- `SQL_DATABASE`: Database name
-- `SQL_CONNECTION_STRING`: Optional for local dev when `NODE_ENV=development`
-- `SCHEMA_WHITELIST`: View name pattern (e.g., `vw%`)
-- `SCHEMA_OBJECT_TYPES`: `views|tables|both` (default: `both`)
-- `OBJECT_ALLOWLIST`: Comma‑separated `schema.table` list for tables
-- `ROW_LIMIT_DEFAULT`: Default row cap (e.g., `200`; max enforced is `5000`)
-- `TZ`: `UTC`
-- `NODE_ENV`: `development` locally, `production` in Azure
-
-Connection/auth:
-- In Azure, a Managed Identity token is used to connect to SQL.
-- Grant the function app identity `db_datareader` in the target database.
+### Performance
+- **Limit results**: Use appropriate `row_limit` values
+- **Indexed columns**: Query on indexed columns for better performance
+- **Avoid SELECT ***: Specify only needed columns
 
 ---
 
-### Local Development Quickstart
-```bash
-npm install
-func start
+## 🚨 Common Issues & Solutions
 
-# In another terminal
-npm run test:schema
-npm run test:query
-```
-
----
-
-### Tips & Constraints
-- Prefer fully schema‑qualified names (e.g., `SalesLT.Customer`).
-- If you include your own `TOP(...)`, the server will not inject another.
-- When `row_count` equals your effective limit, a `notes` field indicates truncation.
-- SQL is logged with truncation (first 200 chars), along with row count and timing.
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| `400 Bad Request` | Missing `sql` parameter or invalid SQL | Check request body and SQL syntax |
+| `500 Internal Server Error` | Banned keywords or invalid SQL | Remove banned keywords, ensure SELECT-only |
+| Empty results | No matching data or invalid table names | Verify table names and schema |
+| Slow queries | Large result sets or missing indexes | Add `TOP()` and check query performance |
 
 ---
 
-### OpenAPI
-An OpenAPI (Swagger 2.0) document is included at `openapi.yaml` describing requests and responses.
+## 📚 Additional Resources
+
+- **OpenAPI Spec**: Available at `/openapi.yaml`
+- **Database Connection**: Uses Azure Managed Identity for secure access
+- **Logging**: All queries are logged (SQL truncated to 200 chars for security)
+- **Timezone**: All timestamps are in UTC
+
+---
+
+## 🔍 Need Help?
+
+If you encounter issues:
+1. Check the error message in the response
+2. Verify your function key is correct
+3. Ensure your SQL follows the security rules
+4. Check that table/view names exist in your database
+
+**Remember**: This is a read-only API designed for safe data exploration and reporting! 📊✨
 
 
